@@ -5,7 +5,7 @@ const { parseStringPromise } = require("xml2js");
 
 // 함수별 실행 설정 (Serverless)
 module.exports.config = {
-  regions: ['hnd1'],   // 도쿄 리전
+  regions: ['sin1'],   // 싱가포르 리전
   maxDuration: 10,
   memory: 1024
 };
