@@ -39,7 +39,10 @@ module.exports = async (req, res) => {
       return res.status(500).json({ ok: false, error: "Missing ONBID_SERVICE_KEY" });
     }
 
-    const { op = "getUnifyNewCltrList", ...rest } = req.query;
+    const { op: rawOp, ...rest } = req.query;
+    // 지역 파라미터가 있거나 op가 비어있으면 getUnifyUsageCltr로 기본 처리
+    const wantsRegion = !!(rest.SIDO || rest.SGK || rest.EMD);
+    const op = rawOp || (wantsRegion ? "getUnifyUsageCltr" : "getUnifyNewCltrList");
     if (!ALLOWED_OPS.has(op)) {
       return res.status(400).json({ ok: false, error: `Unsupported operation: ${op}` });
     }
