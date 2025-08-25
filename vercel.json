@@ -1,7 +1,7 @@
 {
   "functions": {
     "api/onbid/proxy.js": {
-      "regions": ["hnd1"],      // ← 함수 단위로 리전 지정
+      "regions": ["hnd1"],
       "memory": 1024,
       "maxDuration": 10
     }
