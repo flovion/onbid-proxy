@@ -3,6 +3,13 @@
 
 const { parseStringPromise } = require("xml2js");
 
+// 함수별 실행 설정 (Serverless)
+module.exports.config = {
+  regions: ['hnd1'],   // 도쿄 리전
+  maxDuration: 10,
+  memory: 1024
+};
+
 // 오퍼레이션 허용 목록
 const ALLOWED_OPS = new Set([
   "getUnifyNewCltrList",   // 통합 새로운 물건 목록
