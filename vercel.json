@@ -1,0 +1,9 @@
+{
+  "regions": ["icn1"],
+  "functions": {
+    "api/onbid/proxy.js": {
+      "memory": 1024,
+      "maxDuration": 10
+    }
+  }
+}
