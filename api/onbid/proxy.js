@@ -3,13 +3,6 @@
 
 const { parseStringPromise } = require("xml2js");
 
-// 함수별 실행 설정 (리전은 필요에 따라 sin1/hnd1/kix1 등으로 조정)
-module.exports.config = {
-  regions: ["sin1"],
-  maxDuration: 10,
-  memory: 1024
-};
-
 // 허용 오퍼레이션
 const ALLOWED_OPS = new Set([
   "getUnifyNewCltrList",
