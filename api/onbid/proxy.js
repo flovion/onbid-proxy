@@ -1,22 +1,18 @@
-// api/onbid/proxy.js  (CommonJS)
-// 온비드 XML → JSON 변환 프록시
-
 const { parseStringPromise } = require("xml2js");
 
-// 오퍼레이션 허용 목록
+// 허용 오퍼레이션
 const ALLOWED_OPS = new Set([
-  "getUnifyNewCltrList",   // 통합 새로운 물건 목록
-  "getUnifyUsageCltr",     // 용도/지역/가격 등으로 물건 목록
-  "getOnbidTopCodeInfo"    // 용도 상위 코드 목록
+  "getUnifyNewCltrList",
+  "getUnifyUsageCltr",
+  "getOnbidTopCodeInfo"
 ]);
 
-// 서비스별 베이스 URL 매핑
+// 서비스 매핑
 const SERVICE_BASE = {
   ThingInfoInquireSvc: "http://openapi.onbid.co.kr/openapi/services/ThingInfoInquireSvc",
   OnbidCodeInfoInquireSvc: "http://openapi.onbid.co.kr/openapi/services/OnbidCodeInfoInquireSvc"
 };
 
-// 각 op → 어떤 서비스로 보낼지 매핑
 const OP_SERVICE = {
   getUnifyNewCltrList: "ThingInfoInquireSvc",
   getUnifyUsageCltr: "ThingInfoInquireSvc",
@@ -29,20 +25,35 @@ function setCors(res) {
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 }
 
+// fetch에 타임아웃 걸기
+async function fetchWithTimeout(url, { timeoutMs = 8000 } = {}) {
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), timeoutMs);
+  try {
+    const r = await fetch(url, {
+      headers: { "Accept": "application/xml,*/*" },
+      signal: ac.signal,
+      cache: "no-store"
+    });
+    return r;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 module.exports = async (req, res) => {
   setCors(res);
   if (req.method === "OPTIONS") return res.status(200).end();
 
   try {
     const serviceKey = process.env.ONBID_SERVICE_KEY;
-    if (!serviceKey) {
-      return res.status(500).json({ ok: false, error: "Missing ONBID_SERVICE_KEY" });
-    }
+    if (!serviceKey) return res.status(500).json({ ok: false, error: "Missing ONBID_SERVICE_KEY" });
 
+    // 기본 op 선택 로직(지역 파라미터 있으면 getUnifyUsageCltr)
     const { op: rawOp, ...rest } = req.query;
-    // 지역 파라미터가 있거나 op가 비어있으면 getUnifyUsageCltr로 기본 처리
     const wantsRegion = !!(rest.SIDO || rest.SGK || rest.EMD);
     const op = rawOp || (wantsRegion ? "getUnifyUsageCltr" : "getUnifyNewCltrList");
+
     if (!ALLOWED_OPS.has(op)) {
       return res.status(400).json({ ok: false, error: `Unsupported operation: ${op}` });
     }
@@ -56,12 +67,37 @@ module.exports = async (req, res) => {
       if (v !== undefined && v !== null && String(v).length) url.searchParams.set(k, v);
     });
 
-    const r = await fetch(url.toString());
-    const xmlText = await r.text();
+    // 1차 호출(8초 타임아웃)
+    let resp, xmlText;
+    try {
+      resp = await fetchWithTimeout(url.toString(), { timeoutMs: 8000 });
+      xmlText = await resp.text();
+    } catch (e) {
+      // 2차 재시도: rows 줄이고(기본 10) 키워드 제거(있다면)로 빠르게 재조회
+      const retryUrl = new URL(url.toString());
+      const prevRows = Number(retryUrl.searchParams.get("numOfRows") || "10");
+      retryUrl.searchParams.set("numOfRows", Math.min(prevRows, 10).toString());
+      if (retryUrl.searchParams.has("CLTR_NM")) retryUrl.searchParams.delete("CLTR_NM");
 
-    // XML → JSON
-    const json = await parseStringPromise(xmlText, { explicitArray: false, trim: true });
+      const r2 = await fetchWithTimeout(retryUrl.toString(), { timeoutMs: 8000 });
+      const xml2 = await r2.text();
 
+      // 재시도 결과 반환
+      const json2 = await parseStringPromise(xml2, { explicitArray: false, trim: true });
+      return res.status(200).json({
+        ok: true,
+        op,
+        request: {
+          primary: url.toString().replace(serviceKey, "****"),
+          retry: retryUrl.toString().replace(serviceKey, "****")
+        },
+        data: json2,
+        note: "primary request timed out; returned retried result (reduced rows / removed CLTR_NM)"
+      });
+    }
+
+    // 정상 응답 파싱
+    const json = await parseStringPromise(xmlText || "", { explicitArray: false, trim: true });
     return res.status(200).json({
       ok: true,
       op,
@@ -69,6 +105,7 @@ module.exports = async (req, res) => {
       data: json
     });
   } catch (e) {
-    return res.status(500).json({ ok: false, error: e?.message || "Unknown error" });
+    const msg = e?.name === "AbortError" ? "Gateway timeout to upstream (Onbid)" : (e?.message || "Unknown error");
+    return res.status(504).json({ ok: false, error: msg });
   }
 };
