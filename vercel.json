@@ -1,9 +1,0 @@
-{
-  "functions": {
-    "api/onbid/proxy.js": {
-      "regions": ["hnd1"],
-      "memory": 1024,
-      "maxDuration": 10
-    }
-  }
-}
